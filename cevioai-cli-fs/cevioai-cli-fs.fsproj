@@ -19,6 +19,7 @@
     <ItemGroup>
       <Reference Include="CeVIO.Talk.RemoteService2">
         <HintPath>..\..\..\..\..\Program Files\CeVIO\CeVIO AI\CeVIO.Talk.RemoteService2.dll</HintPath>
+        <Private>False</Private>
       </Reference>
     </ItemGroup>
 
