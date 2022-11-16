@@ -51,18 +51,25 @@ type CliList =
             // output=text verbose=true
             | (OutputFormat.text, true) ->
                 TalkerAgent2.AvailableCasts
-                |> Seq.map (fun name -> Talker2(cast=name))
+                |> Seq.map (fun name -> Talker2(cast = name))
                 |> Seq.map ListResult.from
                 |> Seq.iter (fun r ->
-                    let components_names =   r.components |> Array.map (fun c -> c.name) |> String.concat "," 
+                    let components_names =
+                        r.components
+                        |> Array.map (fun c -> c.name)
+                        |> String.concat ","
+
                     printfn $"{r.name}\t{components_names}")
+
                 0
             // output=json
             | (OutputFormat.json, _) ->
-                let r = TalkerAgent2.AvailableCasts
-                        |> Seq.map (fun name -> Talker2(cast=name))
-                        |> Seq.map ListResult.from
-                        |> Seq.toArray
+                let r =
+                    TalkerAgent2.AvailableCasts
+                    |> Seq.map (fun name -> Talker2(cast = name))
+                    |> Seq.map ListResult.from
+                    |> Seq.toArray
+
                 let opt = JsonSerializerOptions()
                 opt.Encoder <- JavaScriptEncoder.Create(UnicodeRanges.All)
                 opt.WriteIndented <- true
@@ -72,37 +79,62 @@ type CliList =
             | _ -> failwith "unreachable"
         | n -> (int) n
 
-[<Verb("play")>]
-type CliPlay =
-    { [<Option('n', "name", Required = true, HelpText = "talker name")>]
-      name: string
-      [<Option('v', "volume", HelpText = "volume(音量). value: 0-100")>]
-      volume: uint32 option
-      [<Option('a', "alpha", HelpText = "alpha(声質). value: 0-100")>]
-      alpha: uint32 option
-      [<Option('s', "speed", HelpText = "speed(話す速さ). value: 0-100")>]
-      speed: uint32 option
-      [<Option("tone", HelpText = "tone(声の高さ). value: 0-100")>]
-      tone: uint32 option
-      [<Option("tone-scale", HelpText = "tone scale(抑揚). value: 0-100")>]
-      tone_scale: uint32 option
+type ITalkable =
+    abstract name: string
+    abstract volume: uint32 option
+    abstract alpha: uint32 option
+    abstract speed: uint32 option
+    abstract tone: uint32 option
+    abstract tone_scale: uint32 option
 
-      [<Option('t', "text", Group = "input")>]
-      text: string
-      [<Option('f', "file", Group = "input")>]
-      file: string }
+let get_talker(talkable: ITalkable) =
+    let t = Talker2(cast = talkable.name)
+    t.Volume <- (t.Volume, talkable.volume) ||> Option.defaultValue
+    t.Alpha <- (t.Alpha, talkable.alpha) ||> Option.defaultValue
+    t.Speed <- (t.Speed, talkable.speed) ||> Option.defaultValue
+    t.Tone <- (t.Tone, talkable.tone) ||> Option.defaultValue
+    t.ToneScale <- (t.ToneScale, talkable.tone_scale) ||> Option.defaultValue
+    t
+
+
+[<Verb("play")>]
+type CliPlay() =
+    interface ITalkable with
+        member this.name = this.name
+        member this.volume = this.volume
+        member this.alpha = this.alpha
+        member this.speed = this.speed
+        member this.tone = this.tone
+        member this.tone_scale = this.tone_scale
+
+    [<Option('n', "name", Required = true, HelpText = "talker name")>]
+    member val name: string = null with get, set
+
+    [<Option('v', "volume", HelpText = "volume(音量). value: 0-100")>]
+    member val volume: uint32 option = None with get, set
+
+    [<Option('a', "alpha", HelpText = "alpha(声質). value: 0-100")>]
+    member val alpha: uint32 option = None with get, set
+
+    [<Option('s', "speed", HelpText = "speed(話す速さ). value: 0-100")>]
+    member val speed: uint32 option = None with get, set
+
+    [<Option("tone", HelpText = "tone(声の高さ). value: 0-100")>]
+    member val tone: uint32 option = None with get, set
+
+    [<Option("tone-scale", HelpText = "tone scale(抑揚). value: 0-100")>]
+    member val tone_scale: uint32 option = None with get, set
+
+    [<Option('t', "text", Group = "input")>]
+    member val text: string = null with get, set
+
+    [<Option('f', "file", Group = "input")>]
+    member val file: string = null with get, set
+
     member this.run() =
         match ServiceControl2.StartHost false with
         | HostStartResult.Succeeded ->
-            let t = Talker2 this.name
-            t.Volume <- (t.Volume, this.volume) ||> Option.defaultValue
-            t.Alpha <- (t.Alpha, this.alpha) ||> Option.defaultValue
-            t.Speed <- (t.Speed, this.speed) ||> Option.defaultValue
-            t.Tone <- (t.Tone, this.tone) ||> Option.defaultValue
-
-            t.ToneScale <-
-                (t.ToneScale, this.tone_scale)
-                ||> Option.defaultValue
+            let talker = get_talker this
 
             let text =
                 if this.text <> null then
@@ -112,47 +144,53 @@ type CliPlay =
                 else
                     failwith "unreachable"
 
-            let state = t.Speak text
+            let state = talker.Speak text
             state.Wait()
 
             if state.IsSucceeded then 0 else 1
         | n -> (int) n
 
 [<Verb("save")>]
-type CliSave =
-    { [<Option('n', "name", Required = true, HelpText = "talker name")>]
-      name: string
-      [<Option('v', "volume", HelpText = "volume(音量). value: 0-100")>]
-      volume: uint32 option
-      [<Option('a', "alpha", HelpText = "alpha(声質). value: 0-100")>]
-      alpha: uint32 option
-      [<Option('s', "speed", HelpText = "speed(話す速さ). value: 0-100")>]
-      speed: uint32 option
-      [<Option("tone", HelpText = "tone(声の高さ). value: 0-100")>]
-      tone: uint32 option
-      [<Option("tone-scale", HelpText = "tone scale(抑揚). value: 0-100")>]
-      tone_scale: uint32 option
+type CliSave() =
+    interface ITalkable with
+        member this.name = this.name
+        member this.volume = this.volume
+        member this.alpha = this.alpha
+        member this.speed = this.speed
+        member this.tone = this.tone
+        member this.tone_scale = this.tone_scale
 
-      [<Option('t', "text", Group = "input")>]
-      text: string
-      [<Option('f', "file", Group = "input")>]
-      file: string
-      
-      [<Option('o', "output-path", Required = true, HelpText = "specifies the output path of the wav file")>]
-      output_path: string
-      }
+    [<Option('n', "name", Required = true, HelpText = "talker name")>]
+    member val name: string = null with get, set
+
+    [<Option('v', "volume", HelpText = "volume(音量). value: 0-100")>]
+    member val volume: uint32 option = None with get, set
+
+    [<Option('a', "alpha", HelpText = "alpha(声質). value: 0-100")>]
+    member val alpha: uint32 option = None with get, set
+
+    [<Option('s', "speed", HelpText = "speed(話す速さ). value: 0-100")>]
+    member val speed: uint32 option = None with get, set
+
+    [<Option("tone", HelpText = "tone(声の高さ). value: 0-100")>]
+    member val tone: uint32 option = None with get, set
+
+    [<Option("tone-scale", HelpText = "tone scale(抑揚). value: 0-100")>]
+    member val tone_scale: uint32 option = None with get, set
+
+    [<Option('t', "text", Group = "input")>]
+    member val text: string = null with get, set
+
+    [<Option('f', "file", Group = "input")>]
+    member val file: string = null with get, set
+
+    [<Option('o', "output-path", Required = true, HelpText = "specifies the output path of the wav file")>]
+    member val output_path: string = null with get, set
+
     member this.run() =
         match ServiceControl2.StartHost false with
         | HostStartResult.Succeeded ->
-            let t = Talker2 this.name
-            t.Volume <- (t.Volume, this.volume) ||> Option.defaultValue
-            t.Alpha <- (t.Alpha, this.alpha) ||> Option.defaultValue
-            t.Speed <- (t.Speed, this.speed) ||> Option.defaultValue
-            t.Tone <- (t.Tone, this.tone) ||> Option.defaultValue
-
-            t.ToneScale <-
-                (t.ToneScale, this.tone_scale)
-                ||> Option.defaultValue
+            let talker = get_talker this
 
             let text =
                 if this.text <> null then
@@ -162,7 +200,10 @@ type CliSave =
                 else
                     failwith "unreachable"
 
-            if t.OutputWaveToFile(text, this.output_path) then 0 else 1
+            if talker.OutputWaveToFile(text, this.output_path) then
+                0
+            else
+                1
         | n -> (int) n
 
 [<EntryPoint>]
