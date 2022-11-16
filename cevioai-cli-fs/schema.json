@@ -1,0 +1,73 @@
+﻿{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/Talker",
+  "definitions": {
+    "Talker": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "volume": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "alpha": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "speed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "tone": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "tone_scale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Component"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "text"
+      ],
+      "title": "Talker"
+    },
+    "Component": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "Component"
+    }
+  }
+}

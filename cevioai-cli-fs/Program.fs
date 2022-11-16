@@ -5,7 +5,12 @@ open CommandLine
 open CeVIO.Talk.RemoteService2
 open System.Linq
 open CommandLine.Text
+open Interface
 
+[<RequireQualifiedAccess>]
+type InputFormat =
+    | auto = 0
+    | json = 1
 
 [<RequireQualifiedAccess>]
 type OutputFormat =
@@ -79,14 +84,6 @@ type CliList =
             | _ -> failwith "unreachable"
         | n -> (int) n
 
-type ITalkable =
-    abstract name: string
-    abstract volume: uint32 option
-    abstract alpha: uint32 option
-    abstract speed: uint32 option
-    abstract tone: uint32 option
-    abstract tone_scale: uint32 option
-
 let get_talker (talkable: ITalkable) =
     let t = Talker2(cast = talkable.name)
 
@@ -102,6 +99,17 @@ let get_talker (talkable: ITalkable) =
         (t.ToneScale, talkable.tone_scale)
         ||> Option.defaultValue
 
+    match talkable.components with
+    | Some (cs) ->
+        cs
+        |> Seq.iter (fun c ->
+            match c.value with
+            | Some (value) ->
+                let tc = t.Components.ByName c.name
+                tc.Value <- value
+            | None -> ())
+    | None -> ()
+
     t
 
 
@@ -114,6 +122,7 @@ type CliPlay() =
         member this.speed = this.speed
         member this.tone = this.tone
         member this.tone_scale = this.tone_scale
+        member this.components = None
 
     [<Option('n', "name", Required = true, HelpText = "talker name")>]
     member val name: string = null with get, set
@@ -136,7 +145,7 @@ type CliPlay() =
     [<Option('t', "text", Group = "input")>]
     member val text: string = null with get, set
 
-    [<Option('f', "file", Group = "input")>]
+    [<Option('f', "file", Group = "input", HelpText = "specify auto, json")>]
     member val file: string = null with get, set
 
     member this.run() =
@@ -158,6 +167,39 @@ type CliPlay() =
             if state.IsSucceeded then 0 else 1
         | n -> (int) n
 
+[<Verb("play-from")>]
+type CliPlayFrom() =
+    [<Option('f', "file", Group = "input")>]
+    member val file: string = null with get, set
+
+    [<Option('F', "format", HelpText = "specify input format: auto, json")>]
+    member val format: InputFormat = InputFormat.auto with get, set
+
+    member this.run() =
+        let input =
+            if this.file <> null then
+                let text =
+                    System.IO.File.ReadAllText this.file
+
+                match this.format with
+                | InputFormat.auto ->
+                    let ext =
+                        System.IO.Path.GetExtension(this.file).ToUpper()
+
+                    match ext with
+                    | ".JSON" -> Schema.InputSchema.from_json text
+                    | _ -> failwithf $"The extension was not supported ({ext}). Please specify input argument"
+                | InputFormat.json -> Schema.InputSchema.from_json text
+                | _ -> failwithf "unreachable"
+            else
+                failwithf "unreachable"
+
+        let talker = get_talker input
+        let state = talker.Speak input.text
+        state.Wait()
+
+        if state.IsSucceeded then 0 else 1
+
 [<Verb("save")>]
 type CliSave() =
     interface ITalkable with
@@ -167,6 +209,7 @@ type CliSave() =
         member this.speed = this.speed
         member this.tone = this.tone
         member this.tone_scale = this.tone_scale
+        member this.components = None
 
     [<Option('n', "name", Required = true, HelpText = "talker name")>]
     member val name: string = null with get, set
@@ -217,7 +260,7 @@ type CliSave() =
 [<EntryPoint>]
 let main args =
     let result =
-        Parser.Default.ParseArguments<CliList, CliPlay, CliSave> args
+        Parser.Default.ParseArguments<CliList, CliPlay, CliSave, CliPlayFrom> args
 
     match result with
     | :? CommandLine.Parsed<obj> as command ->
@@ -225,6 +268,7 @@ let main args =
         | :? CliList as opts -> opts.run ()
         | :? CliPlay as opts -> opts.run ()
         | :? CliSave as opts -> opts.run ()
+        | :? CliPlayFrom as opts -> opts.run ()
         | _ -> failwith "unreachable"
     | :? CommandLine.NotParsed<obj> -> 1
     | _ -> failwith "unreachable"
