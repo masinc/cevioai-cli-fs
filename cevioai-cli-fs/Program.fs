@@ -87,13 +87,21 @@ type ITalkable =
     abstract tone: uint32 option
     abstract tone_scale: uint32 option
 
-let get_talker(talkable: ITalkable) =
+let get_talker (talkable: ITalkable) =
     let t = Talker2(cast = talkable.name)
-    t.Volume <- (t.Volume, talkable.volume) ||> Option.defaultValue
+
+    t.Volume <-
+        (t.Volume, talkable.volume)
+        ||> Option.defaultValue
+
     t.Alpha <- (t.Alpha, talkable.alpha) ||> Option.defaultValue
     t.Speed <- (t.Speed, talkable.speed) ||> Option.defaultValue
     t.Tone <- (t.Tone, talkable.tone) ||> Option.defaultValue
-    t.ToneScale <- (t.ToneScale, talkable.tone_scale) ||> Option.defaultValue
+
+    t.ToneScale <-
+        (t.ToneScale, talkable.tone_scale)
+        ||> Option.defaultValue
+
     t
 
 
