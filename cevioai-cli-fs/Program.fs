@@ -192,8 +192,8 @@ type CliSave() =
     [<Option('f', "file", Group = "input")>]
     member val file: string = null with get, set
 
-    [<Option('o', "output-path", Required = true, HelpText = "specifies the output path of the wav file")>]
-    member val output_path: string = null with get, set
+    [<Option('o', "output", Required = true, HelpText = "specifies the output path of the wav file")>]
+    member val output: string = null with get, set
 
     member this.run() =
         match ServiceControl2.StartHost false with
@@ -208,7 +208,7 @@ type CliSave() =
                 else
                     failwith "unreachable"
 
-            if talker.OutputWaveToFile(text, this.output_path) then
+            if talker.OutputWaveToFile(text, this.output) then
                 0
             else
                 1
