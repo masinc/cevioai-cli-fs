@@ -82,33 +82,30 @@ type CliList =
             0
         | _ -> failwith "unreachable"
 
-let get_talker (talkable: ITalkable) =
-    let t = Talker2(cast = talkable.name)
+type ITalkable with
+    member this.get_talker() =
+        let t = Talker2(cast = this.name)
+        t.Volume <- (t.Volume, this.volume) ||> Option.defaultValue
+        t.Alpha <- (t.Alpha, this.alpha) ||> Option.defaultValue
+        t.Speed <- (t.Speed, this.speed) ||> Option.defaultValue
+        t.Tone <- (t.Tone, this.tone) ||> Option.defaultValue
 
-    t.Volume <-
-        (t.Volume, talkable.volume)
-        ||> Option.defaultValue
+        t.ToneScale <-
+            (t.ToneScale, this.tone_scale)
+            ||> Option.defaultValue
 
-    t.Alpha <- (t.Alpha, talkable.alpha) ||> Option.defaultValue
-    t.Speed <- (t.Speed, talkable.speed) ||> Option.defaultValue
-    t.Tone <- (t.Tone, talkable.tone) ||> Option.defaultValue
+        match this.components with
+        | Some (cs) ->
+            cs
+            |> Seq.iter (fun c ->
+                match c.value with
+                | Some (value) ->
+                    let tc = t.Components.ByName c.name
+                    tc.Value <- value
+                | None -> ())
+        | None -> ()
 
-    t.ToneScale <-
-        (t.ToneScale, talkable.tone_scale)
-        ||> Option.defaultValue
-
-    match talkable.components with
-    | Some (cs) ->
-        cs
-        |> Seq.iter (fun c ->
-            match c.value with
-            | Some (value) ->
-                let tc = t.Components.ByName c.name
-                tc.Value <- value
-            | None -> ())
-    | None -> ()
-
-    t
+        t
 
 
 [<Verb("play")>]
@@ -147,7 +144,7 @@ type CliPlay() =
     member val file: string = null with get, set
 
     member this.run() =
-        let talker = get_talker this
+        let talker = this.get_talker ()
 
         let text =
             if this.text <> null then
@@ -201,7 +198,7 @@ type CliSave() =
     member val output: string = null with get, set
 
     member this.run() =
-        let talker = get_talker this
+        let talker = this.get_talker ()
 
         let text =
             if this.text <> null then
@@ -216,29 +213,30 @@ type CliSave() =
         else
             1
 
-type Input =
+type InputType =
     | File of file: string
     | Stdin
 
-let get_input_from (format: InputFormat, input: Input) : InputSchema =
-    match format, input with
-    | InputFormat.json, File file ->
-        System.IO.File.ReadAllText file
-        |> InputSchema.from_json
-    | InputFormat.json, Stdin ->
-        System.Console.In.ReadToEnd()
-        |> InputSchema.from_json
-    | InputFormat.auto, File file ->
-        let ext =
-            System.IO.Path.GetExtension(file).ToLower()
-
-        match ext with
-        | ".json" ->
+type InputType with
+    member this.get_input(format: InputFormat) =
+        match format, this with
+        | InputFormat.json, File file ->
             System.IO.File.ReadAllText file
             |> InputSchema.from_json
-        | _ -> failwithf "The file has a non-supported extension"
-    | InputFormat.auto, Stdin -> failwithf "Stdin requires the format argument to be specified"
-    | _ -> failwith "todo"
+        | InputFormat.json, Stdin ->
+            System.Console.In.ReadToEnd()
+            |> InputSchema.from_json
+        | InputFormat.auto, File file ->
+            let ext =
+                System.IO.Path.GetExtension(file).ToLower()
+
+            match ext with
+            | ".json" ->
+                System.IO.File.ReadAllText file
+                |> InputSchema.from_json
+            | _ -> failwithf "The file has a non-supported extension"
+        | InputFormat.auto, Stdin -> failwithf "Stdin requires the format argument to be specified"
+        | _ -> failwith "todo"
 
 
 [<Verb("play-from")>]
@@ -251,15 +249,15 @@ type CliPlayFrom() =
 
     member this.run() =
         let data =
-            let input =
+            let input_type =
                 match this.file with
                 | null -> failwith "unreachable"
                 | "-" -> Stdin
                 | s -> File s
 
-            get_input_from (this.format, input)
+            input_type.get_input this.format
 
-        let talker = get_talker data
+        let talker = data.get_talker ()
         let state = talker.Speak data.text
         state.Wait()
 
@@ -278,15 +276,15 @@ type CliSaveFrom() =
 
     member this.run() =
         let data =
-            let input =
+            let input_type =
                 match this.file with
                 | null -> failwith "unreachable"
                 | "-" -> Stdin
                 | s -> File s
 
-            get_input_from (this.format, input)
+            input_type.get_input this.format
 
-        let talker = get_talker data
+        let talker = data.get_talker ()
 
         if talker.OutputWaveToFile(data.text, this.output) then
             0
