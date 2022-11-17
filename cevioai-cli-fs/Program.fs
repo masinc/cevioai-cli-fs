@@ -169,17 +169,27 @@ type CliPlay() =
 
 [<Verb("play-from")>]
 type CliPlayFrom() =
-    [<Option('f', "file", Group = "input")>]
+    [<Value(0, Default = "-")>]
     member val file: string = null with get, set
 
-    [<Option('F', "format", HelpText = "specify input format: auto, json")>]
+    [<Option('f', "format", HelpText = "specify input format: auto, json")>]
     member val format: InputFormat = InputFormat.auto with get, set
 
     member this.run() =
         let input =
-            if this.file <> null then
+            match this.file with
+            | null -> failwith "unreachable"
+            | "-" ->                
+                if this.format = InputFormat.auto then
+                    failwithf "Stdin requires the format argument to be specified"
+                
+                let text = System.Console.In.ReadToEnd()
+                match this.format with
+                | InputFormat.json -> Schema.InputSchema.from_json text
+                | _ -> failwithf "unreachable"
+            | file ->            
                 let text =
-                    System.IO.File.ReadAllText this.file
+                    System.IO.File.ReadAllText file
 
                 match this.format with
                 | InputFormat.auto ->
@@ -191,8 +201,6 @@ type CliPlayFrom() =
                     | _ -> failwithf $"The extension was not supported ({ext}). Please specify input argument"
                 | InputFormat.json -> Schema.InputSchema.from_json text
                 | _ -> failwithf "unreachable"
-            else
-                failwithf "unreachable"
 
         let talker = get_talker input
         let state = talker.Speak input.text
