@@ -6,6 +6,7 @@ open CeVIO.Talk.RemoteService2
 open System.Linq
 open CommandLine.Text
 open Interface
+open Schema
 
 [<RequireQualifiedAccess>]
 type InputFormat =
@@ -44,45 +45,42 @@ type CliList =
       [<Option('o', "output", Default = 0)>]
       output: OutputFormat }
     member this.run() =
-        match ServiceControl2.StartHost false with
-        | HostStartResult.Succeeded ->
-            match (this.output, this.verbose) with
-            // output=text verbose=false
-            | (OutputFormat.text, false) ->
-                TalkerAgent2.AvailableCasts
-                |> Array.iter (fun v -> printfn $"{v}")
+        match (this.output, this.verbose) with
+        // output=text verbose=false
+        | (OutputFormat.text, false) ->
+            TalkerAgent2.AvailableCasts
+            |> Array.iter (fun v -> printfn $"{v}")
 
-                0
-            // output=text verbose=true
-            | (OutputFormat.text, true) ->
+            0
+        // output=text verbose=true
+        | (OutputFormat.text, true) ->
+            TalkerAgent2.AvailableCasts
+            |> Seq.map (fun name -> Talker2(cast = name))
+            |> Seq.map ListResult.from
+            |> Seq.iter (fun r ->
+                let components_names =
+                    r.components
+                    |> Array.map (fun c -> c.name)
+                    |> String.concat ","
+
+                printfn $"{r.name}\t{components_names}")
+
+            0
+        // output=json
+        | (OutputFormat.json, _) ->
+            let r =
                 TalkerAgent2.AvailableCasts
                 |> Seq.map (fun name -> Talker2(cast = name))
                 |> Seq.map ListResult.from
-                |> Seq.iter (fun r ->
-                    let components_names =
-                        r.components
-                        |> Array.map (fun c -> c.name)
-                        |> String.concat ","
+                |> Seq.toArray
 
-                    printfn $"{r.name}\t{components_names}")
-
-                0
-            // output=json
-            | (OutputFormat.json, _) ->
-                let r =
-                    TalkerAgent2.AvailableCasts
-                    |> Seq.map (fun name -> Talker2(cast = name))
-                    |> Seq.map ListResult.from
-                    |> Seq.toArray
-
-                let opt = JsonSerializerOptions()
-                opt.Encoder <- JavaScriptEncoder.Create(UnicodeRanges.All)
-                opt.WriteIndented <- true
-                let s = JsonSerializer.Serialize(r, opt)
-                printfn $"{s}"
-                0
-            | _ -> failwith "unreachable"
-        | n -> (int) n
+            let opt = JsonSerializerOptions()
+            opt.Encoder <- JavaScriptEncoder.Create(UnicodeRanges.All)
+            opt.WriteIndented <- true
+            let s = JsonSerializer.Serialize(r, opt)
+            printfn $"{s}"
+            0
+        | _ -> failwith "unreachable"
 
 let get_talker (talkable: ITalkable) =
     let t = Talker2(cast = talkable.name)
@@ -149,61 +147,17 @@ type CliPlay() =
     member val file: string = null with get, set
 
     member this.run() =
-        match ServiceControl2.StartHost false with
-        | HostStartResult.Succeeded ->
-            let talker = get_talker this
+        let talker = get_talker this
 
-            let text =
-                if this.text <> null then
-                    this.text
-                elif this.file <> null then
-                    System.IO.File.ReadAllText this.file
-                else
-                    failwith "unreachable"
+        let text =
+            if this.text <> null then
+                this.text
+            elif this.file <> null then
+                System.IO.File.ReadAllText this.file
+            else
+                failwith "unreachable"
 
-            let state = talker.Speak text
-            state.Wait()
-
-            if state.IsSucceeded then 0 else 1
-        | n -> (int) n
-
-[<Verb("play-from")>]
-type CliPlayFrom() =
-    [<Value(0, Default = "-")>]
-    member val file: string = null with get, set
-
-    [<Option('f', "format", HelpText = "specify input format: auto, json")>]
-    member val format: InputFormat = InputFormat.auto with get, set
-
-    member this.run() =
-        let input =
-            match this.file with
-            | null -> failwith "unreachable"
-            | "-" ->                
-                if this.format = InputFormat.auto then
-                    failwithf "Stdin requires the format argument to be specified"
-                
-                let text = System.Console.In.ReadToEnd()
-                match this.format with
-                | InputFormat.json -> Schema.InputSchema.from_json text
-                | _ -> failwithf "unreachable"
-            | file ->            
-                let text =
-                    System.IO.File.ReadAllText file
-
-                match this.format with
-                | InputFormat.auto ->
-                    let ext =
-                        System.IO.Path.GetExtension(this.file).ToUpper()
-
-                    match ext with
-                    | ".JSON" -> Schema.InputSchema.from_json text
-                    | _ -> failwithf $"The extension was not supported ({ext}). Please specify input argument"
-                | InputFormat.json -> Schema.InputSchema.from_json text
-                | _ -> failwithf "unreachable"
-
-        let talker = get_talker input
-        let state = talker.Speak input.text
+        let state = talker.Speak text
         state.Wait()
 
         if state.IsSucceeded then 0 else 1
@@ -247,36 +201,114 @@ type CliSave() =
     member val output: string = null with get, set
 
     member this.run() =
-        match ServiceControl2.StartHost false with
-        | HostStartResult.Succeeded ->
-            let talker = get_talker this
+        let talker = get_talker this
 
-            let text =
-                if this.text <> null then
-                    this.text
-                elif this.file <> null then
-                    System.IO.File.ReadAllText this.file
-                else
-                    failwith "unreachable"
-
-            if talker.OutputWaveToFile(text, this.output) then
-                0
+        let text =
+            if this.text <> null then
+                this.text
+            elif this.file <> null then
+                System.IO.File.ReadAllText this.file
             else
-                1
-        | n -> (int) n
+                failwith "unreachable"
+
+        if talker.OutputWaveToFile(text, this.output) then
+            0
+        else
+            1
+
+type Input =
+    | File of file: string
+    | Stdin
+
+let get_input_from (format: InputFormat, input: Input) : InputSchema =
+    match format, input with
+    | InputFormat.json, File file ->
+        System.IO.File.ReadAllText file
+        |> InputSchema.from_json
+    | InputFormat.json, Stdin ->
+        System.Console.In.ReadToEnd()
+        |> InputSchema.from_json
+    | InputFormat.auto, File file ->
+        let ext =
+            System.IO.Path.GetExtension(file).ToLower()
+
+        match ext with
+        | ".json" ->
+            System.IO.File.ReadAllText file
+            |> InputSchema.from_json
+        | _ -> failwithf "The file has a non-supported extension"
+    | InputFormat.auto, Stdin -> failwithf "Stdin requires the format argument to be specified"
+    | _ -> failwith "todo"
+
+
+[<Verb("play-from")>]
+type CliPlayFrom() =
+    [<Value(0, Default = "-", Required = false)>]
+    member val file: string = null with get, set
+
+    [<Option('f', "format", HelpText = "specify input format: auto, json")>]
+    member val format: InputFormat = InputFormat.auto with get, set
+
+    member this.run() =
+        let data =
+            let input =
+                match this.file with
+                | null -> failwith "unreachable"
+                | "-" -> Stdin
+                | s -> File s
+
+            get_input_from (this.format, input)
+
+        let talker = get_talker data
+        let state = talker.Speak data.text
+        state.Wait()
+
+        if state.IsSucceeded then 0 else 1
+
+[<Verb("save-from")>]
+type CliSaveFrom() =
+    [<Value(0, Default = "-", Required = false)>]
+    member val file: string = null with get, set
+
+    [<Option('f', "format", HelpText = "specify input format: auto, json")>]
+    member val format: InputFormat = InputFormat.auto with get, set
+
+    [<Option('o', "output", Required = true, HelpText = "specifies the output path of the wav file")>]
+    member val output: string = null with get, set
+
+    member this.run() =
+        let data =
+            let input =
+                match this.file with
+                | null -> failwith "unreachable"
+                | "-" -> Stdin
+                | s -> File s
+
+            get_input_from (this.format, input)
+
+        let talker = get_talker data
+
+        if talker.OutputWaveToFile(data.text, this.output) then
+            0
+        else
+            1
 
 [<EntryPoint>]
 let main args =
     let result =
-        Parser.Default.ParseArguments<CliList, CliPlay, CliSave, CliPlayFrom> args
+        Parser.Default.ParseArguments<CliList, CliPlay, CliSave, CliPlayFrom, CliSaveFrom> args
 
     match result with
     | :? CommandLine.Parsed<obj> as command ->
-        match command.Value with
-        | :? CliList as opts -> opts.run ()
-        | :? CliPlay as opts -> opts.run ()
-        | :? CliSave as opts -> opts.run ()
-        | :? CliPlayFrom as opts -> opts.run ()
-        | _ -> failwith "unreachable"
+        match ServiceControl2.StartHost false with
+        | HostStartResult.Succeeded ->
+            match command.Value with
+            | :? CliList as opts -> opts.run ()
+            | :? CliPlay as opts -> opts.run ()
+            | :? CliSave as opts -> opts.run ()
+            | :? CliPlayFrom as opts -> opts.run ()
+            | :? CliSaveFrom as opts -> opts.run ()
+            | _ -> failwith "unreachable"
+        | r -> (int) r
     | :? CommandLine.NotParsed<obj> -> 1
     | _ -> failwith "unreachable"

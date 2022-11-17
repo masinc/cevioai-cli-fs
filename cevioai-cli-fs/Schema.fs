@@ -1,6 +1,8 @@
 ﻿module Schema
 
 open System.Collections.Generic
+open System.Text.Json
+open System.Text.Json.Serialization
 
 type InputSchemaComponent() =
     member val name: string = null with get, set
@@ -33,5 +35,4 @@ type InputSchema() =
             this.components
             |> Option.map (fun c -> c |> Seq.cast<Interface.IComponent>)
 
-    static member from_json(json: string) : InputSchema =
-        System.Text.Json.JsonSerializer.Deserialize json
+    static member from_json(json: string) : InputSchema = JsonSerializer.Deserialize json
